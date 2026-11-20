@@ -1,0 +1,15 @@
+[workspace]
+name = "riscv64-unknown-elf-libstdcxx-recipe"
+# ../../.channel provides the prebuilt cross compiler used to generate the
+# headers; tools/build-toolchain-channel.sh creates it before publishing this
+# package.
+channels = ["conda-forge", "../../.channel"]
+platforms = ["linux-64"]
+preview = ["pixi-build"]
+
+[package]
+name = "riscv64-unknown-elf-libstdcxx"
+version = "16.2.0"
+
+[package.build]
+backend = { name = "pixi-build-rattler-build", version = "0.4.*", channels = ["conda-forge"] }

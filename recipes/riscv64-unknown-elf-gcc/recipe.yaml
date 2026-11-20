@@ -1,0 +1,71 @@
+schema_version: 1
+
+package:
+  name: riscv64-unknown-elf-gcc
+  version: "16.2.0"
+
+source:
+  - url: https://ftp.gnu.org/gnu/binutils/binutils-2.47.tar.xz
+    sha256: 154ab23b60070e8f27013c22977f1129425d67d1e8acd6e13010e617811e4cff
+    target_directory: binutils
+  - url: https://ftp.gnu.org/gnu/gcc/gcc-16.2.0/gcc-16.2.0.tar.xz
+    sha256: e6738e29597f733270731aa90600f37ffdc045079dfc27ec7e8192cc81085c3e
+    target_directory: gcc
+
+build:
+  number: 0
+  script: build.sh
+
+requirements:
+  build:
+    - ${{ compiler('c') }}
+    - ${{ compiler('cxx') }}
+    - make
+    - flex
+    - bison
+    - texinfo
+    - gmp
+    - mpfr
+    - mpc
+    - isl
+    - zlib
+    - zstd
+  host:
+    - gmp
+    - mpfr
+    - mpc
+    - isl
+    - zlib
+    - zstd
+  run:
+    - gmp
+    - mpfr
+    - mpc
+    - isl
+    - zlib
+    - zstd
+
+# NOTE: `pixi publish` does not execute these tests. They still run with
+# `rattler-build build --test`; the workspace check is tools/check-toolchain.sh.
+tests:
+  - script:
+      - riscv64-unknown-elf-gcc --version
+      - riscv64-unknown-elf-g++ --version
+      - riscv64-unknown-elf-ld --version
+      - test -f "$(riscv64-unknown-elf-gcc -print-libgcc-file-name)"
+
+about:
+  summary: GCC 16 C/C++ cross compiler for riscv64-unknown-elf
+  description: |
+    A freestanding GCC 16.2.0 C/C++ cross compiler for the
+    riscv64-unknown-elf target, bundled with GNU binutils 2.47.
+
+    It installs libgcc, which provides compiler helpers such as __divti3.
+    It does not install a C library, libstdc++.a, libsupc++, libatomic, or
+    libgcov.  The libstdc++ headers are a separate package,
+    riscv64-unknown-elf-libstdcxx.
+  license: GPL-3.0-or-later
+  license_file: COPYING3
+  homepage: https://gcc.gnu.org/
+  documentation: https://gcc.gnu.org/onlinedocs/
+  repository: https://gcc.gnu.org/git/

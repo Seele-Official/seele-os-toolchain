@@ -1,0 +1,46 @@
+schema_version: 1
+
+package:
+  name: riscv64-unknown-elf-libstdcxx
+  version: "16.2.0"
+
+source:
+  - url: https://ftp.gnu.org/gnu/gcc/gcc-16.2.0/gcc-16.2.0.tar.xz
+    sha256: e6738e29597f733270731aa90600f37ffdc045079dfc27ec7e8192cc81085c3e
+    target_directory: gcc
+
+build:
+  number: 1
+  script: build.sh
+
+requirements:
+  build:
+    # The cross compiler is only used to configure and run the header
+    # generation; GCC itself is not rebuilt here.
+    - riscv64-unknown-elf-gcc ==16.2.0
+    - make
+  run:
+    - riscv64-unknown-elf-gcc ==16.2.0
+
+# NOTE: `pixi publish` does not execute these tests. They still run with
+# `rattler-build build --test`; the workspace check is tools/check-toolchain.sh.
+tests:
+  - script:
+      - test -f "$PREFIX/riscv64-unknown-elf/include/c++/16.2.0/bits/c++config.h"
+      - echo '#include <type_traits>' | riscv64-unknown-elf-g++ -std=c++23 -march=rv64gc -mabi=lp64d -ffreestanding -D_GLIBCXX_NO_ASSERTIONS -x c++ -c -o headers.o -
+      - test -z "$(riscv64-unknown-elf-nm -u headers.o)"
+
+about:
+  summary: Freestanding libstdc++ headers for riscv64-unknown-elf
+  description: |
+    The freestanding libstdc++ header tree generated from the GCC 16.2.0
+    sources with --disable-hosted-libstdcxx. It contains no libstdc++.a, no
+    libsupc++, and no libc headers.
+
+    The headers are generated from the same GCC tarball as the compiler and
+    installed into the compiler's cross include directory.
+  license: GPL-3.0-or-later
+  license_file: COPYING3
+  homepage: https://gcc.gnu.org/
+  documentation: https://gcc.gnu.org/onlinedocs/
+  repository: https://gcc.gnu.org/git/

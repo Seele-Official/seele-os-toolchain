@@ -1,0 +1,11 @@
+[workspace]
+name = "seele-toolchain"
+version = "0.1.0"
+description = "Local conda channel for the seele-os riscv64-unknown-elf GCC toolchain"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+requires-pixi = ">=0.84"
+
+[tasks]
+# Assemble .channel: pinned prebuilt GCC + locally built libstdc++ headers.
+channel = "bash tools/build-toolchain-channel.sh"
