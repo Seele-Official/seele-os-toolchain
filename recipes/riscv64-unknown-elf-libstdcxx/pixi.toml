@@ -1,9 +1,13 @@
 [workspace]
 name = "riscv64-unknown-elf-libstdcxx-recipe"
-# ../../.channel provides the prebuilt cross compiler used to generate the
-# headers; tools/build-toolchain-channel.sh creates it before publishing this
-# package.
-channels = ["conda-forge", "../../.channel"]
+# Prefer a locally built compiler in ../../dist when doing a full from-scratch
+# build, and fall back to the published prefix.dev channel so this package can
+# also be rebuilt standalone.
+channels = [
+    "../../dist",
+    "https://prefix.dev/seele-official/seele-os-toolchain",
+    "conda-forge",
+]
 platforms = ["linux-64"]
 preview = ["pixi-build"]
 

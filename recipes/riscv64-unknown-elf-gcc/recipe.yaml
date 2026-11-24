@@ -13,40 +13,27 @@ source:
     target_directory: gcc
 
 build:
-  number: 0
+  number: 3
   script: build.sh
 
 requirements:
   build:
+    - ${{ stdlib('c') }}
     - ${{ compiler('c') }}
     - ${{ compiler('cxx') }}
     - make
     - flex
     - bison
     - texinfo
-    - gmp
-    - mpfr
-    - mpc
-    - isl
-    - zlib
-    - zstd
   host:
     - gmp
     - mpfr
     - mpc
     - isl
     - zlib
-    - zstd
-  run:
-    - gmp
-    - mpfr
-    - mpc
-    - isl
-    - zlib
-    - zstd
 
-# NOTE: `pixi publish` does not execute these tests. They still run with
-# `rattler-build build --test`; the workspace check is tools/check-toolchain.sh.
+# NOTE: `pixi publish` does not execute these tests. Run them explicitly with
+# `rattler-build build --test` when verifying recipe changes.
 tests:
   - script:
       - riscv64-unknown-elf-gcc --version
@@ -64,8 +51,10 @@ about:
     It does not install a C library, libstdc++.a, libsupc++, libatomic, or
     libgcov.  The libstdc++ headers are a separate package,
     riscv64-unknown-elf-libstdcxx.
-  license: GPL-3.0-or-later
-  license_file: COPYING3
+  license: GPL-3.0-or-later WITH GCC-exception-3.1
+  license_file:
+    - COPYING3
+    - COPYING.RUNTIME
   homepage: https://gcc.gnu.org/
   documentation: https://gcc.gnu.org/onlinedocs/
   repository: https://gcc.gnu.org/git/

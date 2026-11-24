@@ -1,11 +1,32 @@
 [workspace]
 name = "seele-toolchain"
 version = "0.1.0"
-description = "Local conda channel for the seele-os riscv64-unknown-elf GCC toolchain"
+description = "Freestanding riscv64-unknown-elf GCC toolchain recipes for https://prefix.dev/seele-official/seele-os-toolchain"
 channels = ["conda-forge"]
 platforms = ["linux-64"]
 requires-pixi = ">=0.84"
 
-[tasks]
-# Assemble .channel: pinned prebuilt GCC + locally built libstdc++ headers.
-channel = "bash tools/build-toolchain-channel.sh"
+[tasks.index]
+cmd = "mkdir -p dist/linux-64 && pixi exec -s rattler-index -- rattler-index fs dist"
+description = "Initialize or re-index the local dist/ staging channel."
+
+[tasks.build-gcc]
+cmd = "mkdir -p dist/linux-64 && pixi publish --path recipes/riscv64-unknown-elf-gcc --target-dir dist/linux-64 --force && pixi exec -s rattler-index -- rattler-index fs dist"
+description = "Build riscv64-unknown-elf-gcc from source into dist/linux-64 and re-index."
+
+[tasks.build-libstdcxx]
+cmd = "pixi publish --path recipes/riscv64-unknown-elf-libstdcxx --target-dir dist/linux-64 --force && pixi exec -s rattler-index -- rattler-index fs dist"
+depends-on = ["index"]
+description = "Build freestanding riscv64-unknown-elf-libstdcxx headers into dist/linux-64 and re-index."
+
+[tasks.build]
+cmd = "pixi run build-gcc && pixi run build-libstdcxx"
+description = "Build both toolchain packages from source into dist/linux-64."
+
+[tasks.upload]
+cmd = "pixi upload prefix --channel seele-official/seele-os-toolchain dist/linux-64/*.conda"
+description = "Upload built packages in dist/linux-64/ to https://prefix.dev/seele-official/seele-os-toolchain."
+
+[tasks.clean]
+cmd = "rm -rf dist"
+description = "Remove local dist/ staging output."

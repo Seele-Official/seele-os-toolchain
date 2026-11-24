@@ -1,78 +1,83 @@
-# 工具链打包与安装
+# Toolchain Packaging & Release Guide
 
-本文说明 `seele-toolchain` 的 channel 结构、组装流程和打包约束。安装与使用步骤见
-[README](../README.md)，两个包的具体内容见各自的 recipe README。
+This document describes the package architecture, host ABI constraints, build workflow, and release verification steps for <https://prefix.dev/seele-official/seele-os-toolchain>.
 
-## 1. 包
+## 1. Package Split
 
-| 包                              | 内容                                           | recipe                                  |
-| ------------------------------- | ---------------------------------------------- | --------------------------------------- |
-| `riscv64-unknown-elf-gcc`       | GCC 16.2.0（C/C++）、binutils 2.47、`libgcc.a` | `recipes/riscv64-unknown-elf-gcc`       |
-| `riscv64-unknown-elf-libstdcxx` | freestanding libstdc++ 头文件                  | `recipes/riscv64-unknown-elf-libstdcxx` |
+The toolchain is split into two conda packages with matching version `16.2.0`:
 
-两个包的 `version` 都是 `16.2.0`；头文件包的 `run` 依赖固定为
-`riscv64-unknown-elf-gcc ==16.2.0`。
+| Package                         | Recipe                                    | Responsibility                                |
+| ------------------------------- | ----------------------------------------- | --------------------------------------------- |
+| `riscv64-unknown-elf-gcc`       | `recipes/riscv64-unknown-elf-gcc/`        | GCC 16.2.0 (C/C++), binutils 2.47, `libgcc.a` |
+| `riscv64-unknown-elf-libstdcxx` | `recipes/riscv64-unknown-elf-libstdcxx/`  | Freestanding `libstdc++` headers only         |
 
-## 2. channel 组装
+Splitting the headers out of the compiler package allows pure-C projects to install only the compiler and lets header configuration changes iterate in a few minutes without recompiling GCC. `riscv64-unknown-elf-libstdcxx` pins `riscv64-unknown-elf-gcc ==16.2.0` at both build and run time.
 
-```bash
-pixi run channel        # bash tools/build-toolchain-channel.sh
+## 2. Host ABI & Compatibility Policy
+
+The packages are consumed on arbitrary `linux-64` workstations and CI runners, so host-side dependencies are deliberately constrained:
+
+- **glibc 2.28 baseline**: `recipes/riscv64-unknown-elf-gcc/recipe.yaml` declares `${{ stdlib('c') }}` and `pixi.toml` pins `c_stdlib = ["sysroot"]` and `c_stdlib_version = ["2.28"]`. This compiles all host binaries against `conda-forge`'s `sysroot_linux-64 2.28` and automatically emits `__glibc >=2.28,<3.0.a0` in package metadata.
+- **No optional `zstd` dependency**: Both binutils and GCC are configured with `--without-zstd` and `zstd` is omitted from `requirements.host`. Avoids coupling consumers (such as older QEMU builds) to `zstd` major/minor transitions on `conda-forge`.
+- **Automatic `run_exports`**: Runtime shared-library constraints (`gmp`, `mpfr`, `mpc`, `isl`, `libzlib`, `libgcc`, `libstdcxx`, `__glibc`) come exclusively from `host`/`build` `run_exports` rather than manual `run` pins.
+- **Clean out-of-tree builds**: Both `build.sh` scripts build inside `${SRC_DIR}` so every invocation starts with a fresh build tree and never inherits stale `config.cache` state from earlier builds.
+
+## 3. Local Build Workflow
+
+All build artifacts are staged into `dist/linux-64/` (gitignored) and indexed with `rattler-index` via `pixi exec`:
+
+| Task                      | Behavior                                                                 |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `pixi run build-gcc`      | Builds `riscv64-unknown-elf-gcc` into `dist/linux-64/` and indexes `dist/`. |
+| `pixi run build-libstdcxx`| Initializes/indexes `dist/`, builds `riscv64-unknown-elf-libstdcxx`, and re-indexes `dist/`. |
+| `pixi run build`          | Runs `build-gcc` followed by `build-libstdcxx` to reproduce the full channel from source. |
+| `pixi run index`          | Creates or re-indexes `dist/` as a local conda channel.                  |
+| `pixi run clean`          | Deletes `dist/`.                                                         |
+
+`recipes/riscv64-unknown-elf-libstdcxx/pixi.toml` lists channels in order:
+
+```toml
+channels = [
+    "../../dist",
+    "https://prefix.dev/seele-official/seele-os-toolchain",
+    "conda-forge",
+]
 ```
 
-`tools/build-toolchain-channel.sh` 的步骤：
+- During `pixi run build`, `build-gcc` populates and indexes `dist/` first, so `build-libstdcxx` resolves the freshly built compiler from `../../dist`.
+- During standalone `pixi run build-libstdcxx` (on a fresh clone with an empty `dist/`), `index` initializes an empty local repodata and Pixi falls back to the published compiler on `prefix.dev`.
 
-1. 删除旧的 `.channel/`，创建 `.channel/linux-64/`；
-2. 用 `vendor/SHA256SUMS` 校验预构建 GCC，并把它硬链接（跨文件系统时复制）到
-   `.channel/linux-64/`；
-3. 运行 `rattler-index fs .channel` 建立索引；
-4. 用 `pixi publish --path recipes/riscv64-unknown-elf-libstdcxx` 构建并发布头文件包
-   （`--target-dir .channel/linux-64 --force`）；
-5. 再次运行 `rattler-index`，把新包加入索引；
-6. 检查 `repodata.json` 中同时存在两个包，否则以非零状态退出。
+## 4. Pre-Upload Verification
 
-头文件 recipe 的 workspace 把 `../../.channel` 列在 `channels` 里，configure 时从
-该 channel 取 `riscv64-unknown-elf-gcc`，因此第 3 步必须先于第 4 步。
+`pixi publish` does not execute recipe `tests:`. Before uploading a new build to `prefix.dev`:
 
-`rattler-index` 通过 `pixi exec -s rattler-index` 运行，不依赖任何 workspace 环境。
+1. **Inspect `info/index.json`** inside the generated `.conda` archive:
+   - Confirm `__glibc >=2.28,<3.0.a0` is present on `riscv64-unknown-elf-gcc`.
+   - Confirm no unexpected dependencies (such as `zstd` or unpinned `zlib`) leaked in.
+   - Confirm `license` is `GPL-3.0-or-later WITH GCC-exception-3.1` and `info/licenses/` contains both `COPYING3` and `COPYING.RUNTIME`.
+2. **Verify ELF symbol versions** on extracted host binaries (`bin/*` and `libexec/gcc/riscv64-unknown-elf/16.2.0/*`):
+   ```bash
+   readelf -V <binary> | grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -n 5
+   ```
+   Every host ELF must stay at or below `GLIBC_2.28`.
+3. **Run recipe tests** when changing recipes or configure flags:
+   ```bash
+   pixi exec -s rattler-build -- rattler-build build --recipe recipes/riscv64-unknown-elf-gcc --test
+   ```
+4. **End-to-end consumer check**: Install the staged packages into a consumer workspace (e.g., `seele-os`), build Release and Debug targets, and verify `riscv64-unknown-elf-nm -u` reports no unexpected undefined symbols.
 
-## 3. GCC 包
+## 5. Publishing to prefix.dev
 
-`recipes/riscv64-unknown-elf-gcc` 从源码构建 GCC 16.2.0 + binutils 2.47：
-
-- 只安装 C/C++ 编译器、binutils 和 `libgcc.a`；
-- 不安装 C 库、`libstdc++.a`、`libsupc++`、`libatomic`、`libgcov`；
-- 默认 `-march=rv64gc -mabi=lp64d`，单 multilib；
-- 源码 tarball 的 SHA-256 写在 `recipe.yaml` 里。
-
-源码构建约 20–30 分钟。本地 channel 直接使用 `vendor/` 里的预构建包，不重建 GCC。
-`vendor/` 里的包来自更早的单包 conda-build 制品，经
-`tools/repack-gcc-package.py` 处理：
-
-- 删除随包携带的 libstdc++ 头文件；
-- 删除 `info/recipe`、`info/test`、`info/hash_input.json`；
-- 重写 `info/about.json`；
-- build number 从 `0` 升到 `1`，使重打包制品与原始包可区分。
-
-需要重新生成时：
+Authenticate once (or provide `PREFIX_API_KEY` in CI):
 
 ```bash
-pixi publish --path recipes/riscv64-unknown-elf-gcc --target-dir vendor
+pixi auth login https://prefix.dev
 ```
 
-把产物放入 `vendor/`，删除旧包，更新 `vendor/SHA256SUMS`，再运行
-`pixi run channel`。
+Upload all packages staged in `dist/linux-64/`:
 
-## 4. libstdc++ 头文件包
+```bash
+pixi run upload
+```
 
-`recipes/riscv64-unknown-elf-libstdcxx` 从同一份 GCC 16.2.0 源码生成头文件：
-
-1. 用 channel 里的交叉编译器单独 configure `libstdc++-v3`
-   （`--disable-hosted-libstdcxx`、`--without-headers` 等，见 `build.sh`）；
-2. `make install-data`，只安装头文件；
-3. 把生成的 `bits/*` 头文件并到源码头文件旁边，删除临时的目标目录；
-4. 删除 hosted-only 的 `ext/pb_ds`；
-5. 安装到 `riscv64-unknown-elf/include/c++/16.2.0`；
-6. 检查 `bits/c++config.h` 中 `_GLIBCXX_HOSTED` 为 `0`。
-
-包中只有头文件，不含 `libstdc++.a`、`libsupc++` 或 C 库头文件。冷构建约 2–3
-分钟，主要是 configure；构建目录保留在 work root 之外，之后的增量构建约半分钟。
+Bump `build.number` in the modified `recipe.yaml` whenever rebuilding the same upstream version so caches and resolvers pick up the new artifact cleanly.

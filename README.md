@@ -1,62 +1,66 @@
 # seele-toolchain
 
-`riscv64-unknown-elf` 交叉工具链的 conda channel，供 riscv 的 c++ freestanding 项目使用。
-channel 提供两个包：
+Source recipes for the public `riscv64-unknown-elf` freestanding GCC conda channel hosted at <https://prefix.dev/seele-official/seele-os-toolchain>.
 
-| 包                              | 内容                                               |
-| ------------------------------- | -------------------------------------------------- |
-| `riscv64-unknown-elf-gcc`       | GCC 16.2.0（C/C++）、GNU binutils 2.47、`libgcc.a` |
-| `riscv64-unknown-elf-libstdcxx` | freestanding libstdc++ 头文件                      |
+Built for bare-metal RISC-V 64-bit C/C++ kernels and freestanding targets.
 
-channel 由 `vendor/` 里的预构建 GCC 与 `recipes/` 里的 recipe 组装。
+## Packages
 
-## Structure
+| Package                         | Version | Contents                                           |
+| ------------------------------- | ------- | -------------------------------------------------- |
+| `riscv64-unknown-elf-gcc`       | 16.2.0  | GCC 16.2.0 (C/C++), GNU binutils 2.47, `libgcc.a`  |
+| `riscv64-unknown-elf-libstdcxx` | 16.2.0  | Freestanding `libstdc++` headers (`_GLIBCXX_HOSTED=0`) |
 
-```text
-recipes/riscv64-unknown-elf-gcc/          # GCC/binutils/libgcc 的源码 recipe
-recipes/riscv64-unknown-elf-libstdcxx/    # 头文件包 recipe（从 GCC 源码生成）
-vendor/riscv64-unknown-elf-gcc-*.conda    # 预构建 GCC
-vendor/SHA256SUMS                         # 预构建包的校验和
-tools/build-toolchain-channel.sh          # 组装并索引 .channel
-tools/check-toolchain.sh                  # 在已安装环境里做编译探针
-tools/repack-gcc-package.py               # 从原始单包生成 vendor/ 里的 GCC 包
-docs/toolchain-packaging.md               # 包结构与打包流程说明
-```
+Both packages target `-march=rv64gc -mabi=lp64d` (single multilib) by default. They intentionally do **not** ship a C library (no newlib), `libstdc++.a`, `libsupc++`, `libatomic`, or `libgcov`.
 
-## Require
+## Host Requirements
 
-- linux-64；
-- pixi ≥ 0.84（`pixi publish`、`pixi exec` 中的 `rattler-index`）。
-
-## Build channel
-
-```bash
-pixi run channel
-```
-
-脚本依次执行：
-
-1. 用 `vendor/SHA256SUMS` 校验预构建 GCC；
-2. 把 GCC 包硬链接（跨文件系统时复制）到 `.channel/linux-64/`；
-3. 运行 `rattler-index fs .channel` 建立索引；
-4. 用 `pixi publish` 构建并发布 `riscv64-unknown-elf-libstdcxx`；
-5. 再次索引，并确认 `repodata.json` 中同时包含两个包。
-
-产物：
-
-```text
-.channel/linux-64/repodata.json
-.channel/linux-64/riscv64-unknown-elf-gcc-16.2.0-*.conda
-.channel/linux-64/riscv64-unknown-elf-libstdcxx-16.2.0-*.conda
-```
+- `linux-64` host with glibc ≥ 2.28 (built against `conda-forge`'s `sysroot_linux-64 2.28` baseline)
+- Pixi ≥ 0.84
 
 ## Usage
 
+Consuming projects do not need to clone this repository. Add the public channel directly to `pixi.toml`:
+
 ```toml
 [workspace]
-channels = ["conda-forge", "yourpath/toolchain/.channel"]
+channels = ["conda-forge", "https://prefix.dev/seele-official/seele-os-toolchain"]
+platforms = ["linux-64"]
 
 [dependencies]
 riscv64-unknown-elf-gcc = "==16.2.0"
 riscv64-unknown-elf-libstdcxx = "==16.2.0"
+```
+
+## Building From Source
+
+All packages are built from upstream GNU release tarballs verified by SHA-256 into the local `dist/linux-64/` staging channel:
+
+```bash
+# Build both packages from scratch (~25–35 min total)
+pixi run build
+
+# Or build each package individually:
+pixi run build-gcc        # GCC + binutils + libgcc (~20–30 min)
+pixi run build-libstdcxx  # Headers only (~3–4 min; resolves GCC from dist/ or prefix.dev)
+
+# Remove local build output
+pixi run clean
+```
+
+To publish newly built packages (requires `pixi auth login https://prefix.dev`):
+
+```bash
+pixi run upload
+```
+
+See [docs/toolchain-packaging.md](docs/toolchain-packaging.md) for host ABI constraints, verification checks, and release guidelines.
+
+## Repository Layout
+
+```text
+pixi.toml                                 # Build, index, and upload tasks
+docs/toolchain-packaging.md               # Packaging architecture, ABI baseline, and release guide
+recipes/riscv64-unknown-elf-gcc/          # Compiler, binutils, and libgcc recipe
+recipes/riscv64-unknown-elf-libstdcxx/    # Freestanding libstdc++ headers recipe
 ```

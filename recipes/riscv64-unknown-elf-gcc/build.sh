@@ -30,10 +30,9 @@ export CXXFLAGS="${CXXFLAGS:-} -O2"
 # $ORIGIN-relative paths when packaging.
 export LDFLAGS="${LDFLAGS:-} -Wl,-rpath,${PREFIX}/lib"
 
-# pixi-build wipes the recipe's work root before every build, so the build
-# trees live next to it: otherwise a failed GCC build always restarts from
-# binutils.  See the pixi-build-rattler-build "incremental compilation" note.
-BUILD_ROOT="${SRC_DIR}/.."
+# Build out-of-tree inside SRC_DIR so every recipe build starts clean and
+# reproducible (no stale config.cache carried across flag or sysroot changes).
+BUILD_ROOT="${SRC_DIR}"
 
 # ---------------------------------------------------------------------------
 # GNU binutils
@@ -53,6 +52,7 @@ pushd "${BUILD_ROOT}/build-binutils"
     --disable-libdecnumber \
     --disable-readline \
     --with-system-zlib \
+    --without-zstd \
     --enable-deterministic-archives
 make -j"${JOBS}"
 make install
@@ -80,6 +80,7 @@ pushd "${BUILD_ROOT}/build-gcc"
     --disable-libvtv \
     --without-headers \
     --with-system-zlib \
+    --without-zstd \
     --with-arch=rv64gc \
     --with-abi=lp64d \
     --with-gmp="${PREFIX}" \

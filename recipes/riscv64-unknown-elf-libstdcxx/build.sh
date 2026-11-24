@@ -10,9 +10,8 @@ set -euo pipefail
 TARGET="riscv64-unknown-elf"
 GCC_VERSION="16.2.0"
 
-# pixi-build wipes the work root before every build: keep the build tree next
-# to it so a failed run can be resumed.
-BUILD="${SRC_DIR}/../build-libstdcxx"
+# Build out-of-tree inside SRC_DIR for a clean, reproducible configure step.
+BUILD="${SRC_DIR}/build-libstdcxx"
 mkdir -p "${BUILD}"
 pushd "${BUILD}"
 

@@ -1,48 +1,32 @@
 # riscv64-unknown-elf-libstdcxx
 
-Pixi package containing the freestanding libstdc++ headers for the
-`riscv64-unknown-elf` cross compiler.
+Recipe for the freestanding `libstdc++` headers matching `riscv64-unknown-elf-gcc ==16.2.0`:
 
-- Generated from the GCC 16.2.0 sources with `--disable-hosted-libstdcxx`;
-- no `libstdc++.a`, no `libsupc++`, no libc headers;
-- installs into `riscv64-unknown-elf/include/c++/16.2.0`, where the compiler's `g++`
-  searches by default;
-- depends on `riscv64-unknown-elf-gcc ==16.2.0`.
-
-The headers are not part of the compiler package. A project that uses them installs this
-package as well.
+- Generated from GCC 16.2.0 sources with `--disable-hosted-libstdcxx` and `--without-headers`
+- Headers only: no `libstdc++.a`, no `libsupc++`, and no C library headers
+- Installs into `riscv64-unknown-elf/include/c++/16.2.0`, on the cross compiler's default C++ include search path
+- Pins `riscv64-unknown-elf-gcc ==16.2.0` at build and run time
 
 ## Build
 
+From the repository root:
+
 ```bash
-pixi publish --path recipes/riscv64-unknown-elf-libstdcxx \
-    --target-dir "$PWD/.channel/linux-64"
-rattler-index fs .channel
+pixi run build-libstdcxx
 ```
 
-`bash tools/build-toolchain-channel.sh` runs this and indexes the channel in one step.
-The build needs the cross compiler, so the channel must already contain and index
-`riscv64-unknown-elf-gcc`; `pixi.toml` lists it in `channels` for that reason.
+The build takes roughly 3–4 minutes and stages the `.conda` package in `dist/linux-64/`. `pixi.toml` resolves `riscv64-unknown-elf-gcc` from `../../dist` first and falls back to <https://prefix.dev/seele-official/seele-os-toolchain>, so this recipe can be built standalone without recompiling GCC.
 
-## Source
+## How Headers Are Generated
 
-The GCC 16.2.0 tarball (same SHA-256 as the compiler recipe). The build script
-configures `libstdc++-v3` on its own — not as part of a GCC build — against the cross
-compiler from the channel, runs `make install-data` (headers only), moves the generated
-`bits/*` headers next to the source headers, and drops the hosted-only `ext/pb_ds` tree.
-
-The headers are the ones GCC 16.2.0 generates with `--disable-hosted-libstdcxx`. A
-cold package build takes about two to three minutes, mostly configuring; a rebuild
-reuses the build tree and takes about half a minute.
+`build.sh` configures `libstdc++-v3` standalone against the cross compiler, runs `make install-data` (headers only), moves target-generated `bits/*` headers into `include/c++/16.2.0/bits/`, removes the hosted-only `ext/pb_ds` tree, and verifies `#define _GLIBCXX_HOSTED 0` in `bits/c++config.h`.
 
 ## Tests
 
 `recipe.yaml` checks that:
 
-- `$PREFIX/riscv64-unknown-elf/include/c++/16.2.0/bits/c++config.h` exists;
-- `<type_traits>` compiles with
-  `-std=c++23 -march=rv64gc -mabi=lp64d -ffreestanding -D_GLIBCXX_NO_ASSERTIONS`;
-- the resulting object has no undefined symbols.
+- `$PREFIX/riscv64-unknown-elf/include/c++/16.2.0/bits/c++config.h` exists
+- `<type_traits>` compiles with `-std=c++26 -march=rv64gc -mabi=lp64d -ffreestanding -D_GLIBCXX_NO_ASSERTIONS`
+- The resulting object file has no undefined symbols
 
-`pixi publish` does not execute recipe tests; `tools/check-toolchain.sh` is the workspace
-check.
+Because `pixi publish` skips recipe tests, run them explicitly with `rattler-build build --test` when verifying recipe changes.
